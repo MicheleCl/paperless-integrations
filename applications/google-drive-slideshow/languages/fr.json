@@ -1,0 +1,10 @@
+{
+  "title": "Diaporama Google Drive",
+  "loading": "Chargement du dossier Google Drive…",
+  "errorTitle": "Le diaporama Google Drive n'a pas pu se charger",
+  "apiFailed": "La requête Google Drive a échoué ({status})",
+  "imageFailed": "La photo Google Drive sélectionnée n'a pas pu s'afficher.",
+  "photoDetailsLabel": "Détails de la photo",
+  "photoPosition": "Photo {index} sur {count}",
+  "sample": "Dossier d'aperçu"
+}

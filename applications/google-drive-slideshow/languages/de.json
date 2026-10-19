@@ -1,0 +1,10 @@
+{
+  "title": "Google Drive Diashow",
+  "loading": "Google-Drive-Ordner wird geladen…",
+  "errorTitle": "Google Drive Diashow konnte nicht geladen werden",
+  "apiFailed": "Google-Drive-Anfrage fehlgeschlagen ({status})",
+  "imageFailed": "Das ausgewählte Google-Drive-Foto konnte nicht angezeigt werden.",
+  "photoDetailsLabel": "Fotodetails",
+  "photoPosition": "Foto {index} von {count}",
+  "sample": "Vorschauordner"
+}

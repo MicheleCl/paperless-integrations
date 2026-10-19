@@ -1,0 +1,122 @@
+{
+  "name": "Google Drive Slideshow",
+  "version": "0.1.0",
+  "status": "alpha",
+  "description": "Shows one image at a time from a public Google Drive folder, advancing on a fixed time slot.",
+  "renderPage": "./render.html",
+  "icon": "./assets/icon.png",
+  "nativeSettings": {
+    "color": "light",
+    "folderUrl": "",
+    "folderResourceKey": "",
+    "apiKey": "",
+    "order": "random",
+    "fit": "cover",
+    "slotMinutes": 60,
+    "showFilename": false,
+    "brightnessBoost": "0 - Off"
+  },
+  "configVariants": [
+    {
+      "color": "light",
+      "folderUrl": "",
+      "folderResourceKey": "",
+      "apiKey": "",
+      "order": "random",
+      "fit": "cover",
+      "slotMinutes": 60,
+      "showFilename": false,
+      "brightnessBoost": "0 - Off"
+    },
+    {
+      "color": "light",
+      "folderUrl": "",
+      "folderResourceKey": "",
+      "apiKey": "",
+      "order": "modified",
+      "fit": "contain",
+      "slotMinutes": 60,
+      "showFilename": true,
+      "brightnessBoost": "0 - Off"
+    }
+  ],
+  "formSchema": {
+    "type": "object",
+    "required": [
+      "folderUrl",
+      "apiKey"
+    ],
+    "properties": {
+      "folderUrl": {
+        "type": "string",
+        "title": "Folder URL or ID",
+        "description": "Public Google Drive folder link from Share (paste the full URL when possible), or the raw folder ID. Sharing must be Anyone with the link can view."
+      },
+      "folderResourceKey": {
+        "type": "string",
+        "title": "Folder resource key",
+        "description": "Optional. Required for some link-shared folders when you use only a folder ID, or when the share URL has no resourcekey query parameter. Copy it from the full Share link (?resourcekey=…) or leave empty if the folder URL already includes it.",
+        "default": ""
+      },
+      "apiKey": {
+        "type": "string",
+        "title": "Google API key",
+        "description": "API key with the Google Drive API enabled. The key is sent only in POST requests to this integration's data adapter.",
+        "format": "password"
+      },
+      "order": {
+        "type": "string",
+        "title": "Photo order",
+        "description": "Random picks a stable photo per time slot. Name, modified, and created rotate through the folder in that sort order.",
+        "enum": [
+          "name",
+          "modified",
+          "created",
+          "random"
+        ],
+        "default": "random"
+      },
+      "fit": {
+        "type": "string",
+        "title": "Image fit",
+        "enum": [
+          "cover",
+          "contain"
+        ],
+        "default": "cover"
+      },
+      "slotMinutes": {
+        "type": "integer",
+        "title": "Minutes per photo",
+        "description": "Match your frame's synchronisation interval so each refresh shows the image for that time slot.",
+        "minimum": 1,
+        "maximum": 1440,
+        "default": 60
+      },
+      "showFilename": {
+        "type": "boolean",
+        "title": "Show filename",
+        "default": false
+      },
+      "brightnessBoost": {
+        "type": "string",
+        "title": "Brightness boost",
+        "description": "Exposure lift for the e-ink frame.",
+        "enum": [
+          "0 - Off",
+          "1",
+          "2",
+          "3 - Max"
+        ],
+        "default": "0 - Off"
+      }
+    }
+  },
+  "language": [
+    "en",
+    "de",
+    "fr",
+    "es",
+    "it"
+  ]
+}

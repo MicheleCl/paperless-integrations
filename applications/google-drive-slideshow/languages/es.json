@@ -1,0 +1,10 @@
+{
+  "title": "Presentación de Google Drive",
+  "loading": "Cargando la carpeta de Google Drive…",
+  "errorTitle": "No se pudo cargar la presentación de Google Drive",
+  "apiFailed": "La solicitud a Google Drive falló ({status})",
+  "imageFailed": "No se pudo mostrar la foto seleccionada de Google Drive.",
+  "photoDetailsLabel": "Detalles de la foto",
+  "photoPosition": "Foto {index} de {count}",
+  "sample": "Carpeta de vista previa"
+}

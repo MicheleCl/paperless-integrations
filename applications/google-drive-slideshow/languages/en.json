@@ -1,0 +1,10 @@
+{
+  "title": "Google Drive Slideshow",
+  "loading": "Loading your Google Drive folder…",
+  "errorTitle": "Google Drive Slideshow could not load",
+  "apiFailed": "Google Drive request failed with {status}",
+  "imageFailed": "The selected Google Drive photo could not be displayed.",
+  "photoDetailsLabel": "Photo details",
+  "photoPosition": "Photo {index} of {count}",
+  "sample": "Preview folder"
+}

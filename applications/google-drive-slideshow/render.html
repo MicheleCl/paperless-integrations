@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="paperless:epd-optimize" content='{"intent":"natural"}'>
+    <title>Google Drive Slideshow</title>
+    <link rel="stylesheet" href="/assets/paperless.css">
+    <script src="/assets/paperless.iife.js"></script>
+    <style>
+      .photo-screen {
+        position: relative;
+        display: grid;
+        width: 100vw;
+        height: 100vh;
+        padding: 0;
+        overflow: hidden;
+        background: var(--pp-bg);
+        color: var(--pp-fg);
+      }
+
+      .photo-image {
+        width: 100%;
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
+        display: block;
+        object-position: center;
+        background: var(--pp-card);
+      }
+
+      .photo-screen.is-contain {
+        padding: clamp(12px, 2.5vw, 28px);
+        gap: clamp(10px, 2vw, 20px);
+        grid-template-rows: minmax(0, 1fr) auto;
+      }
+
+      .photo-screen.is-contain .photo-image {
+        border: 2px solid var(--pp-border);
+        border-radius: clamp(8px, 1.5vw, 18px);
+      }
+
+      .photo-details {
+        position: absolute;
+        z-index: 2;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: none;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 20px;
+        padding: clamp(32px, 7vw, 86px) clamp(18px, 3.5vw, 44px) clamp(16px, 3vw, 34px);
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
+        color: #fff;
+      }
+
+      .photo-details.is-visible {
+        display: flex;
+      }
+
+      .photo-screen.is-contain .photo-details {
+        position: static;
+        min-height: 54px;
+        padding: 0 2px;
+        background: none;
+        color: var(--pp-fg);
+      }
+
+      .photo-filename {
+        margin: 0;
+        font-size: clamp(1rem, 2vw, 2rem);
+        line-height: 1.12;
+        font-weight: 760;
+        overflow-wrap: anywhere;
+      }
+
+      .photo-position {
+        flex: 0 0 auto;
+        margin: 0;
+        padding: 7px 11px;
+        border: 1px solid currentColor;
+        border-radius: 999px;
+        font-size: clamp(0.74rem, 1.25vw, 1.05rem);
+        line-height: 1;
+        font-weight: 750;
+        white-space: nowrap;
+      }
+
+      .sample-badge {
+        position: absolute;
+        z-index: 3;
+        top: clamp(12px, 2.5vw, 28px);
+        right: clamp(12px, 2.5vw, 28px);
+        display: none;
+        padding: 7px 11px;
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.68);
+        color: #fff;
+        font-size: clamp(0.68rem, 1.15vw, 0.94rem);
+        line-height: 1;
+        font-weight: 750;
+      }
+
+      .sample-badge.is-visible {
+        display: block;
+      }
+
+      .photo-status {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        text-align: center;
+        background: var(--pp-bg);
+        color: var(--pp-fg);
+      }
+
+      .photo-status h1 {
+        margin: 0 0 10px;
+        font-size: clamp(2rem, 5vw, 4rem);
+        line-height: 1.05;
+      }
+
+      .photo-status p {
+        max-width: 58ch;
+        margin: 0 auto;
+        font-size: clamp(1rem, 2vw, 1.4rem);
+        line-height: 1.35;
+        opacity: 0.82;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="website-has-loading-element"></div>
+    <main class="photo-screen" id="photo-screen">
+      <img class="photo-image" id="photo-image" alt="">
+      <section class="photo-details" id="photo-details" aria-label="">
+        <p class="photo-filename" id="photo-filename"></p>
+        <p class="photo-position" id="photo-position"></p>
+      </section>
+      <p class="sample-badge" id="sample-badge"></p>
+      <section class="photo-status" id="photo-status">
+        <div>
+          <h1>Google Drive Slideshow</h1>
+          <p>Loading your Google Drive folder…</p>
+        </div>
+      </section>
+    </main>
+    <script>
+      (async function render() {
+        const {
+          waitForPayload,
+          getSettings,
+          getQuerySettings,
+          mergeSettings,
+          loadLanguageJson,
+          applyColorTheme,
+          escapeHtml,
+          fitAllText,
+          fitToScreen,
+          markLoading,
+          markReady,
+          markError,
+        } = window.PaperlessOpenIntegration;
+
+        const defaultMessages = {
+          title: "Google Drive Slideshow",
+          loading: "Loading your Google Drive folder…",
+          errorTitle: "Google Drive Slideshow could not load",
+          apiFailed: "Google Drive request failed with {status}",
+          imageFailed: "The selected Google Drive photo could not be displayed.",
+          photoDetailsLabel: "Photo details",
+          photoPosition: "Photo {index} of {count}",
+          sample: "Preview folder",
+        };
+        const defaults = {
+          color: "light",
+          folderUrl: "",
+          folderResourceKey: "",
+          apiKey: "",
+          order: "random",
+          fit: "cover",
+          slotMinutes: 60,
+          showFilename: false,
+          brightnessBoost: "0 - Off",
+        };
+
+        function normalizeBrightnessBoost(settings) {
+          const value = settings?.brightnessBoost;
+          if (value === undefined || value === null || value === "") {
+            return 0;
+          }
+          if (typeof value === "number" && Number.isFinite(value)) {
+            return Math.max(0, Math.min(3, Math.round(value)));
+          }
+          const leadingDigit = String(value).trim().match(/^(\d)/);
+          if (!leadingDigit) {
+            return 0;
+          }
+          return Math.max(0, Math.min(3, Number(leadingDigit[1])));
+        }
+
+        const brightCanvasDitherOptions = {
+          serpentine: true,
+          errorDiffusionMatrix: "floydSteinberg",
+        };
+
+        // Exposure steps checked on Spectra 6 output (natural intent, Floyd–Steinberg dither).
+        const brightnessBoostLevels = [
+          null,
+          {
+            cssFilter: "brightness(1.08) contrast(1.02)",
+            epdOptimize: {
+              intent: "natural",
+              imageAdjustmentOptions: {
+                toneMapping: {
+                  exposure: 0.15,
+                  contrast: 0.02,
+                  saturation: 0,
+                  strength: 0.16,
+                  shadowBoost: 0.11,
+                  highlightCompress: -0.05,
+                  midpoint: 0.5,
+                },
+                dynamicRangeCompression: {
+                  mode: "display",
+                  strength: 0.22,
+                  lowPercentile: 0.02,
+                  highPercentile: 0.99,
+                },
+              },
+              canvasDitherOptions: brightCanvasDitherOptions,
+            },
+          },
+          {
+            cssFilter: "brightness(1.16) contrast(1.03)",
+            epdOptimize: {
+              intent: "natural",
+              imageAdjustmentOptions: {
+                toneMapping: {
+                  exposure: 0.29,
+                  contrast: 0.04,
+                  saturation: 0,
+                  strength: 0.32,
+                  shadowBoost: 0.23,
+                  highlightCompress: -0.09,
+                  midpoint: 0.5,
+                },
+                dynamicRangeCompression: {
+                  mode: "display",
+                  strength: 0.44,
+                  lowPercentile: 0.02,
+                  highPercentile: 0.99,
+                },
+              },
+              canvasDitherOptions: brightCanvasDitherOptions,
+            },
+          },
+          {
+            cssFilter: "brightness(1.24) contrast(1.05)",
+            epdOptimize: {
+              intent: "natural",
+              imageAdjustmentOptions: {
+                toneMapping: {
+                  exposure: 0.44,
+                  contrast: 0.06,
+                  saturation: 0,
+                  strength: 0.48,
+                  shadowBoost: 0.34,
+                  highlightCompress: -0.14,
+                  midpoint: 0.5,
+                },
+                dynamicRangeCompression: {
+                  mode: "display",
+                  strength: 0.66,
+                  lowPercentile: 0.02,
+                  highPercentile: 0.99,
+                },
+              },
+              canvasDitherOptions: brightCanvasDitherOptions,
+            },
+          },
+        ];
+
+        function applyBrightnessBoost(level) {
+          const meta = document.querySelector('meta[name="paperless:epd-optimize"]');
+          const image = document.getElementById("photo-image");
+          if (!meta) {
+            return;
+          }
+          const config = brightnessBoostLevels[level];
+          if (!config) {
+            if (image) {
+              image.style.filter = "";
+            }
+            meta.setAttribute("content", JSON.stringify({ intent: "natural" }));
+            return;
+          }
+          if (image) {
+            image.style.filter = config.cssFilter;
+          }
+          meta.setAttribute("content", JSON.stringify(config.epdOptimize));
+        }
+        let messages = defaultMessages;
+        let renderRequest = 0;
+        let hasDisplayedPhoto = false;
+        let lastReadyMeta = null;
+
+        function t(key, values = {}) {
+          const template = typeof messages[key] === "string" ? messages[key] : defaultMessages[key] || key;
+          return template.replace(/\{(\w+)\}/g, (_match, name) => values[name] ?? "");
+        }
+
+        function isEnabled(value) {
+          return value === true || value === "true" || value === "1";
+        }
+
+        async function loadMessages(payload) {
+          let result;
+          if (typeof loadLanguageJson === "function") {
+            result = await loadLanguageJson(payload);
+          } else {
+            const requested = String(payload?.meta?.language || "en").split("-")[0].toLowerCase();
+            const language = ["en", "de", "fr", "es", "it"].includes(requested) ? requested : "en";
+            const response = await fetch(`./languages/${language}.json`, { cache: "no-store" });
+            if (!response.ok) {
+              throw new Error(`Could not load language JSON: ${response.status}`);
+            }
+            result = { language, messages: await response.json() };
+          }
+          messages = { ...defaultMessages, ...result.messages };
+          document.documentElement.lang = result.language || "en";
+          document.getElementById("photo-details").setAttribute("aria-label", t("photoDetailsLabel"));
+        }
+
+        function showStatus(title, message) {
+          const status = document.getElementById("photo-status");
+          status.innerHTML = `<div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></div>`;
+          status.style.display = "grid";
+        }
+
+        function hideStatus() {
+          document.getElementById("photo-status").style.display = "none";
+        }
+
+        function beginRender() {
+          if (hasDisplayedPhoto) {
+            return;
+          }
+          markLoading?.();
+          showStatus(t("title"), t("loading"));
+        }
+
+        function failRender(error, request) {
+          if (request !== renderRequest) {
+            return;
+          }
+          if (hasDisplayedPhoto) {
+            console.warn(error);
+            hideStatus();
+            markReady?.(lastReadyMeta || {});
+            return;
+          }
+          markError?.(error);
+          showStatus(t("errorTitle"), error.message);
+        }
+
+        function capturePhotoSnapshot() {
+          const image = document.getElementById("photo-image");
+          const screen = document.getElementById("photo-screen");
+          const details = document.getElementById("photo-details");
+          const badge = document.getElementById("sample-badge");
+          return {
+            imageSrc: image.src,
+            imageAlt: image.alt,
+            imageObjectFit: image.style.objectFit,
+            screenContain: screen.classList.contains("is-contain"),
+            filename: document.getElementById("photo-filename").textContent,
+            position: document.getElementById("photo-position").textContent,
+            detailsVisible: details.classList.contains("is-visible"),
+            badgeVisible: badge.classList.contains("is-visible"),
+            readyMeta: lastReadyMeta,
+          };
+        }
+
+        function restorePhotoSnapshot(snapshot) {
+          if (!snapshot) {
+            return;
+          }
+          const image = document.getElementById("photo-image");
+          const screen = document.getElementById("photo-screen");
+          const details = document.getElementById("photo-details");
+          const badge = document.getElementById("sample-badge");
+          screen.classList.toggle("is-contain", snapshot.screenContain);
+          image.style.objectFit = snapshot.imageObjectFit;
+          image.alt = snapshot.imageAlt;
+          image.src = snapshot.imageSrc;
+          document.getElementById("photo-filename").textContent = snapshot.filename;
+          document.getElementById("photo-position").textContent = snapshot.position;
+          details.classList.toggle("is-visible", snapshot.detailsVisible);
+          badge.classList.toggle("is-visible", snapshot.badgeVisible);
+        }
+
+        function paperIdFromPayload(payload) {
+          const meta = payload?.meta;
+          if (!meta || typeof meta !== "object") {
+            return "";
+          }
+          return String(
+            meta.paperId ||
+              meta.paperUUID ||
+              meta.integrationInstanceId ||
+              meta.pluginInstanceId ||
+              "",
+          ).trim();
+        }
+
+        function apiBody(settings, payload) {
+          return {
+            color: settings.color,
+            folderUrl: settings.folderUrl,
+            folderResourceKey: settings.folderResourceKey,
+            apiKey: settings.apiKey,
+            order: settings.order,
+            fit: settings.fit,
+            slotMinutes: settings.slotMinutes,
+            showFilename: settings.showFilename,
+            paperId: paperIdFromPayload(payload),
+          };
+        }
+
+        async function readApiError(response) {
+          const text = await response.text();
+          if (!text) {
+            return t("apiFailed", { status: response.status });
+          }
+          try {
+            const parsed = JSON.parse(text);
+            return parsed.error || text;
+          } catch {
+            return text.split("\n")[0].replace(/^Error:\s*/, "");
+          }
+        }
+
+        function payloadFromMessage(event) {
+          const message = event.data;
+          if (!message || typeof message !== "object") {
+            return null;
+          }
+          if (message.type !== "INIT" && message.cmd !== "message") {
+            return null;
+          }
+          return message.data && typeof message.data === "object" ? message.data : null;
+        }
+
+        async function renderPayload(payload) {
+          const request = ++renderRequest;
+          try {
+            beginRender();
+            await loadMessages(payload);
+            const settings = mergeSettings(defaults, getSettings(payload), getQuerySettings());
+            settings.slotMinutes = Math.max(1, Math.min(1440, Number(settings.slotMinutes) || 60));
+            applyColorTheme?.(settings.color, { defaultTheme: defaults.color });
+            applyBrightnessBoost(normalizeBrightnessBoost(settings));
+
+            const response = await fetch(new URL("./api/data", window.location.href), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(apiBody(settings, payload)),
+              cache: "no-store",
+            });
+            if (!response.ok) {
+              throw new Error(await readApiError(response));
+            }
+            const data = await response.json();
+            if (request !== renderRequest) {
+              return;
+            }
+
+            const screen = document.getElementById("photo-screen");
+            const image = document.getElementById("photo-image");
+            const details = document.getElementById("photo-details");
+            const filename = document.getElementById("photo-filename");
+            const position = document.getElementById("photo-position");
+            const badge = document.getElementById("sample-badge");
+            const fit = settings.fit === "contain" ? "contain" : "cover";
+            const rollback = hasDisplayedPhoto ? capturePhotoSnapshot() : null;
+
+            screen.classList.toggle("is-contain", fit === "contain");
+            image.style.objectFit = fit;
+            image.alt = data.name || t("title");
+
+            const showFilename = isEnabled(settings.showFilename) && data.name;
+            filename.textContent = showFilename ? data.name : "";
+            position.textContent = t("photoPosition", { index: data.index, count: data.total });
+            details.classList.toggle("is-visible", Boolean(showFilename));
+
+            badge.textContent = t("sample");
+            badge.classList.toggle("is-visible", data.source === "sample");
+
+            const imageUrls = Array.isArray(data.imageUrls) && data.imageUrls.length
+              ? data.imageUrls
+              : data.imageUrl
+                ? [data.imageUrl]
+                : [];
+            let imageUrlIndex = 0;
+            let readyMarked = false;
+            const readyMeta = { source: data.source, index: data.index, total: data.total, name: data.name };
+            const finishReady = async () => {
+              if (request !== renderRequest || readyMarked) {
+                return;
+              }
+              readyMarked = true;
+              hasDisplayedPhoto = true;
+              lastReadyMeta = readyMeta;
+              hideStatus();
+              await fitAllText?.();
+              await fitToScreen?.();
+              markReady(readyMeta);
+            };
+
+            image.onload = () => {
+              finishReady().catch((error) => {
+                if (rollback) {
+                  restorePhotoSnapshot(rollback);
+                }
+                failRender(error, request);
+              });
+            };
+            image.onerror = () => {
+              if (request !== renderRequest) {
+                return;
+              }
+              imageUrlIndex += 1;
+              if (imageUrlIndex < imageUrls.length) {
+                image.src = imageUrls[imageUrlIndex];
+                return;
+              }
+              if (rollback) {
+                restorePhotoSnapshot(rollback);
+                failRender(new Error(t("imageFailed")), request);
+                return;
+              }
+              failRender(new Error(t("imageFailed")), request);
+            };
+            if (!imageUrls.length) {
+              throw new Error(t("imageFailed"));
+            }
+            image.src = imageUrls[0];
+            if (image.complete && image.naturalWidth > 0) {
+              await finishReady();
+            }
+          } catch (error) {
+            failRender(error, request);
+          }
+        }
+
+        function handlePayloadMessage(event) {
+          const payload = payloadFromMessage(event);
+          if (payload) {
+            renderPayload(payload);
+          }
+        }
+
+        try {
+          const payload = await waitForPayload({ timeoutMs: 500, onUpdate: renderPayload });
+          await renderPayload(payload);
+        } catch (error) {
+          failRender(error, renderRequest);
+        } finally {
+          window.addEventListener("message", handlePayloadMessage);
+        }
+      })();
+    </script>
+  </body>
+</html>
