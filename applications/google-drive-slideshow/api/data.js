@@ -23,7 +23,7 @@ function normalizePhotoOrder(value) {
   return photoOrders.has(order) ? order : "random";
 }
 
-function clampSlotMinutes(value) {
+export function clampSlotMinutes(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
     return 60;
@@ -50,7 +50,7 @@ function normalizeResourceKey(value) {
   return key;
 }
 
-function parseFolderInput(input) {
+export function parseFolderInput(input) {
   const raw = stringValue(input);
   if (!raw) {
     return { folderId: "", resourceKey: "" };
@@ -144,7 +144,7 @@ function hashSlot(paperId, slot) {
   return hash.readUInt32BE(0);
 }
 
-function sortFiles(files, order) {
+export function sortFiles(files, order) {
   const list = [...files];
   if (order === "modified") {
     list.sort((a, b) => String(a.modifiedTime).localeCompare(String(b.modifiedTime)));
@@ -165,7 +165,7 @@ function baseIndexForSlot(length, order, slot, paperId) {
   return ((slot % length) + length) % length;
 }
 
-function pickIndex(length, order, slot, paperId) {
+export function pickIndex(length, order, slot, paperId) {
   if (length <= 0) {
     return 0;
   }
@@ -293,7 +293,7 @@ function noImagesError(rawCount) {
   return "Google Drive returned no files for this folder. Paste the full folder link from Share (including resourcekey if present), confirm photos are in the folder root, and set sharing to Anyone with the link can view.";
 }
 
-function imageUrlsForFile(file) {
+export function imageUrlsForFile(file) {
   const urls = [];
   const add = (url) => {
     const normalized = stringValue(url);
