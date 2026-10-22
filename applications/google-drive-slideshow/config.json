@@ -1,10 +1,11 @@
 {
   "name": "Google Drive Slideshow",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "status": "alpha",
   "description": "Shows one image at a time from a Google Drive folder (public link or private folder via your service account), advancing on a fixed time slot.",
   "renderPage": "./render.html",
   "settingsPage": "./settings.html",
+  "settingsPageOnly": true,
   "icon": "./assets/icon.png",
   "nativeSettings": {
     "color": "light",
@@ -51,101 +52,7 @@
   ],
   "formSchema": {
     "type": "object",
-    "properties": {
-      "connectionMode": {
-        "type": "string",
-        "title": "Active connection",
-        "enum": ["public", "serviceAccount"],
-        "default": "public",
-        "inStettingsPage": true
-      },
-      "folderUrl": {
-        "type": "string",
-        "title": "Public folder URL or ID",
-        "default": "",
-        "inStettingsPage": true
-      },
-      "folderResourceKey": {
-        "type": "string",
-        "title": "Public folder resource key",
-        "default": "",
-        "inStettingsPage": true
-      },
-      "apiKey": {
-        "type": "string",
-        "title": "Google API key",
-        "format": "password",
-        "default": "",
-        "inStettingsPage": true
-      },
-      "serviceAccountKey": {
-        "type": "string",
-        "title": "Service account JSON key",
-        "format": "password",
-        "default": "",
-        "inStettingsPage": true
-      },
-      "serviceAccountEmail": {
-        "type": "string",
-        "title": "Service account email",
-        "default": "",
-        "inStettingsPage": true
-      },
-      "folderId": {
-        "type": "string",
-        "title": "Private folder ID",
-        "default": "",
-        "inStettingsPage": true
-      },
-      "folderName": {
-        "type": "string",
-        "title": "Private folder name",
-        "default": "",
-        "inStettingsPage": true
-      },
-      "folderResourceKeyPrivate": {
-        "type": "string",
-        "title": "Private folder resource key",
-        "default": "",
-        "inStettingsPage": true
-      },
-      "order": {
-        "type": "string",
-        "title": "Photo order",
-        "enum": ["name", "modified", "created", "random"],
-        "default": "random",
-        "inStettingsPage": true
-      },
-      "fit": {
-        "type": "string",
-        "title": "Image fit",
-        "enum": ["cover", "contain"],
-        "default": "cover",
-        "inStettingsPage": true
-      },
-      "slotMinutes": {
-        "type": "integer",
-        "title": "Minutes per photo",
-        "minimum": 1,
-        "maximum": 1440,
-        "default": 60,
-        "inStettingsPage": true
-      },
-      "showFilename": {
-        "type": "boolean",
-        "title": "Show filename",
-        "default": false,
-        "inStettingsPage": true
-      },
-      "brightnessBoost": {
-        "type": "number",
-        "title": "Brightness boost",
-        "minimum": 0,
-        "maximum": 3,
-        "default": 0,
-        "inStettingsPage": true
-      }
-    }
+    "properties": {}
   },
   "language": ["en", "de", "fr", "es", "it"]
 }

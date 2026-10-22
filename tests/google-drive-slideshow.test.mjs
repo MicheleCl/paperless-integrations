@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import handler, {
   clampSlotMinutes,
   inferConnectionMode,
@@ -389,4 +392,36 @@ test("brightnessBoostEpdMeta is natural at level 0 and exposure increases", () =
   );
   assert.ok(exposures[0] < exposures[1]);
   assert.ok(exposures[1] < exposures[2]);
+});
+
+const configPath = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../applications/google-drive-slideshow/config.json",
+);
+
+const NATIVE_SETTINGS_KEYS = [
+  "connectionMode",
+  "folderUrl",
+  "folderResourceKey",
+  "apiKey",
+  "serviceAccountKey",
+  "serviceAccountEmail",
+  "folderId",
+  "folderName",
+  "folderResourceKeyPrivate",
+  "order",
+  "fit",
+  "slotMinutes",
+  "showFilename",
+  "brightnessBoost",
+];
+
+test("manifest uses custom settings page without native formSchema fields", async () => {
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  assert.equal(config.settingsPage, "./settings.html");
+  assert.equal(config.settingsPageOnly, true);
+  assert.deepEqual(config.formSchema?.properties, {});
+  for (const key of NATIVE_SETTINGS_KEYS) {
+    assert.ok(key in config.nativeSettings, `missing nativeSettings.${key}`);
+  }
 });

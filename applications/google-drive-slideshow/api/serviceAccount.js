@@ -4,7 +4,7 @@ import {
   sanitizeServiceAccountKeyText,
 } from "../assets/drive-connection.js";
 
-const userAgent = "paperlesspaper-openintegrations/0.2.0";
+const userAgent = "paperlesspaper-openintegrations/0.2.1";
 const driveReadonlyScope = "https://www.googleapis.com/auth/drive.readonly";
 const tokenAudience = "https://oauth2.googleapis.com/token";
 const tokenUrl = "https://oauth2.googleapis.com/token";

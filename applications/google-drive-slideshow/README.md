@@ -1,7 +1,7 @@
 ---
 slug: google-drive-slideshow
 name: Google Drive Slideshow
-version: 0.2.0
+version: 0.2.1
 description: Shows one image at a time from a Google Drive folder (public link or private folder via your service account), advancing on a fixed time slot.
 renderPage: ./render.html
 configUrl: /google-drive-slideshow/config.json
