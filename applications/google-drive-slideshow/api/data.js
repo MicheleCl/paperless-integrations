@@ -1,6 +1,16 @@
 import crypto from "node:crypto";
+import { inferConnectionMode } from "../assets/drive-connection.js";
+import {
+  accessTokenFromKeyInput,
+  driveErrorKind,
+  DriveSlideshowError,
+  normalizeServiceAccountKeyInput,
+  readGoogleError,
+  userAgent,
+} from "./serviceAccount.js";
 
-const userAgent = "paperlesspaper-openintegrations/0.1.0";
+export { inferConnectionMode };
+
 const maxSlideshowImages = 5000;
 const driveListPageSize = 1000;
 const driveIdPattern = /^[\w-]+$/;
@@ -13,7 +23,6 @@ const imageMimeTypes = new Set([
 ]);
 const imageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
 const photoOrders = new Set(["name", "modified", "created", "random"]);
-
 function stringValue(value) {
   return String(value ?? "").trim();
 }
@@ -64,7 +73,7 @@ export function parseFolderInput(input) {
   try {
     url = new URL(raw);
   } catch {
-    throw new Error("Folder URL must be a valid Google Drive link or folder ID.");
+    throw new DriveSlideshowError("Folder URL must be a valid Google Drive link or folder ID.", "transient");
   }
 
   const resourceKey = normalizeResourceKey(
@@ -75,7 +84,7 @@ export function parseFolderInput(input) {
   if (folderMatch?.[1]) {
     const folderId = normalizeDriveFileId(decodeURIComponent(folderMatch[1]));
     if (!folderId) {
-      throw new Error("Could not find a valid folder ID in the Google Drive URL.");
+      throw new DriveSlideshowError("Could not find a valid folder ID in the Google Drive URL.", "transient");
     }
     return { folderId, resourceKey };
   }
@@ -84,12 +93,12 @@ export function parseFolderInput(input) {
   if (openId) {
     const folderId = normalizeDriveFileId(openId);
     if (!folderId) {
-      throw new Error("Could not find a valid folder ID in the Google Drive URL.");
+      throw new DriveSlideshowError("Could not find a valid folder ID in the Google Drive URL.", "transient");
     }
     return { folderId, resourceKey };
   }
 
-  throw new Error("Could not find a folder ID in the Google Drive URL.");
+  throw new DriveSlideshowError("Could not find a folder ID in the Google Drive URL.", "transient");
 }
 
 function driveResourceKeysHeader(entries) {
@@ -184,25 +193,10 @@ async function readDriveError(response) {
     return "Google Drive folder was not found. Check the folder URL or ID.";
   }
 
-  const text = await response.text().catch(() => "");
-  if (!text) {
-    return `Google Drive request failed with ${response.status}.`;
-  }
-
-  try {
-    const parsed = JSON.parse(text);
-    const message = parsed?.error?.message;
-    if (message) {
-      return message;
-    }
-  } catch {
-    // Plain text error bodies are fine.
-  }
-
-  return `Google Drive request failed with ${response.status}.`;
+  return readGoogleError(response, `Google Drive request failed with ${response.status}.`);
 }
 
-async function listFolderImages(folderId, apiKey, folderResourceKey) {
+async function listFolderImagesWithApiKey(folderId, apiKey, folderResourceKey) {
   const files = [];
   let pageToken = "";
   let rawCount = 0;
@@ -239,39 +233,14 @@ async function listFolderImages(folderId, apiKey, folderResourceKey) {
     });
 
     if (!response.ok) {
-      throw new Error(await readDriveError(response));
+      const kind = driveErrorKind(response.status);
+      throw new DriveSlideshowError(await readDriveError(response), kind);
     }
 
     const payload = await response.json();
-    for (const file of payload.files || []) {
-      if (!file || typeof file !== "object") {
-        continue;
-      }
+    collectImageFiles(payload.files, files, () => {
       rawCount += 1;
-      if (rawCount > maxSlideshowImages) {
-        break;
-      }
-      if (!isImageFile(file)) {
-        continue;
-      }
-      const fileId = normalizeDriveFileId(file.id);
-      if (!fileId) {
-        continue;
-      }
-      const mimeType = stringValue(file.mimeType).toLowerCase();
-      files.push({
-        id: fileId,
-        name: stringValue(file.name) || "photo",
-        mimeType,
-        resourceKey: normalizeResourceKey(file.resourceKey),
-        thumbnailLink: stringValue(file.thumbnailLink),
-        modifiedTime: file.modifiedTime,
-        createdTime: file.createdTime,
-      });
-      if (files.length >= maxSlideshowImages) {
-        break;
-      }
-    }
+    });
 
     if (files.length >= maxSlideshowImages || rawCount >= maxSlideshowImages) {
       break;
@@ -286,11 +255,107 @@ async function listFolderImages(folderId, apiKey, folderResourceKey) {
   return { files, rawCount };
 }
 
+async function listFolderImagesWithAccessToken(folderId, accessToken, folderResourceKey) {
+  const files = [];
+  let pageToken = "";
+  let rawCount = 0;
+  const folderResourceEntries = folderResourceKey ? [{ id: folderId, resourceKey: folderResourceKey }] : [];
+
+  while (true) {
+    if (files.length >= maxSlideshowImages || rawCount >= maxSlideshowImages) {
+      break;
+    }
+
+    const params = new URLSearchParams({
+      q: `'${folderId}' in parents and trashed=false`,
+      fields: "nextPageToken,files(id,name,mimeType,thumbnailLink,modifiedTime,createdTime,resourceKey)",
+      pageSize: String(driveListPageSize),
+      orderBy: "folder,name",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+
+    if (pageToken) {
+      params.set("pageToken", pageToken);
+    }
+
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
+      method: "GET",
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${accessToken}`,
+        "user-agent": userAgent,
+        ...driveResourceKeysHeader(folderResourceEntries),
+      },
+    });
+
+    if (!response.ok) {
+      const kind = driveErrorKind(response.status);
+      const message = await readGoogleError(
+        response,
+        `Google Drive request failed with ${response.status}.`,
+      );
+      throw new DriveSlideshowError(message, kind);
+    }
+
+    const payload = await response.json();
+    collectImageFiles(payload.files, files, () => {
+      rawCount += 1;
+    });
+
+    if (files.length >= maxSlideshowImages || rawCount >= maxSlideshowImages) {
+      break;
+    }
+
+    pageToken = stringValue(payload.nextPageToken);
+    if (!pageToken) {
+      break;
+    }
+  }
+
+  return { files, rawCount };
+}
+
+function collectImageFiles(sourceFiles, files, onRaw) {
+  for (const file of sourceFiles || []) {
+    if (!file || typeof file !== "object") {
+      continue;
+    }
+    onRaw();
+    if (files.length >= maxSlideshowImages) {
+      break;
+    }
+    if (!isImageFile(file)) {
+      continue;
+    }
+    const fileId = normalizeDriveFileId(file.id);
+    if (!fileId) {
+      continue;
+    }
+    const mimeType = stringValue(file.mimeType).toLowerCase();
+    files.push({
+      id: fileId,
+      name: stringValue(file.name) || "photo",
+      mimeType,
+      resourceKey: normalizeResourceKey(file.resourceKey),
+      thumbnailLink: stringValue(file.thumbnailLink),
+      modifiedTime: file.modifiedTime,
+      createdTime: file.createdTime,
+    });
+  }
+}
+
 function noImagesError(rawCount) {
   if (rawCount > 0) {
     return "No supported images were found in the folder root. Use JPEG, PNG, WebP, or GIF files directly in the folder (not in subfolders).";
   }
-  return "Google Drive returned no files for this folder. Paste the full folder link from Share (including resourcekey if present), confirm photos are in the folder root, and set sharing to Anyone with the link can view.";
+  return "This folder is empty. Add JPEG, PNG, WebP, or GIF photos to the folder root (not in subfolders), then refresh.";
+}
+
+function noImagesErrorKind(rawCount) {
+  return rawCount > 0 ? "unsupported" : "empty";
 }
 
 export function imageUrlsForFile(file) {
@@ -360,7 +425,14 @@ function sampleResponse(query) {
   };
 }
 
-export default async function handler({ query }) {
+function errorPayload(error) {
+  if (error instanceof DriveSlideshowError) {
+    return { error: error.message, errorKind: error.errorKind };
+  }
+  throw error;
+}
+
+async function handlePublic(query) {
   const folderUrl = stringValue(query.folderUrl);
   const apiKey = stringValue(query.apiKey);
 
@@ -369,15 +441,15 @@ export default async function handler({ query }) {
   }
 
   if (!folderUrl) {
-    throw new Error("Google Drive folder URL or ID is required.");
+    throw new DriveSlideshowError("Google Drive folder URL or ID is required.", "auth");
   }
   if (!apiKey) {
-    throw new Error("Google API key is required.");
+    throw new DriveSlideshowError("Google API key is required.", "auth");
   }
 
   const { folderId, resourceKey: resourceKeyFromUrl } = parseFolderInput(folderUrl);
   if (!folderId) {
-    throw new Error("Google Drive folder URL or ID is required.");
+    throw new DriveSlideshowError("Google Drive folder URL or ID is required.", "auth");
   }
   const folderResourceKeyHint =
     resourceKeyFromUrl || normalizeResourceKey(query.folderResourceKey);
@@ -387,10 +459,14 @@ export default async function handler({ query }) {
   const paperId = stringValue(query.paperId) || folderId;
 
   const folderResourceKey = await resolveFolderResourceKey(folderId, apiKey, folderResourceKeyHint);
-  const { files: listedFiles, rawCount } = await listFolderImages(folderId, apiKey, folderResourceKey);
+  const { files: listedFiles, rawCount } = await listFolderImagesWithApiKey(
+    folderId,
+    apiKey,
+    folderResourceKey,
+  );
   const files = sortFiles(listedFiles, order);
   if (!files.length) {
-    throw new Error(noImagesError(rawCount));
+    throw new DriveSlideshowError(noImagesError(rawCount), noImagesErrorKind(rawCount));
   }
 
   const index = pickIndex(files.length, order, slot, paperId);
@@ -399,6 +475,7 @@ export default async function handler({ query }) {
 
   return {
     source: "drive",
+    connectionMode: "public",
     imageUrl: imageUrls[0],
     imageUrls,
     name: file.name,
@@ -409,4 +486,70 @@ export default async function handler({ query }) {
     slot,
     slotMinutes,
   };
+}
+
+async function handleServiceAccount(query) {
+  const keyMaterial = stringValue(normalizeServiceAccountKeyInput(query.serviceAccountKey));
+  const folderId = normalizeDriveFileId(query.folderId);
+  const folderResourceKey = normalizeResourceKey(
+    query.folderResourceKeyPrivate || query.folderResourceKey,
+  );
+
+  if (!keyMaterial && !folderId) {
+    return sampleResponse(query);
+  }
+
+  if (!keyMaterial) {
+    throw new DriveSlideshowError("Service account JSON key is required.", "auth");
+  }
+  if (!folderId) {
+    throw new DriveSlideshowError("Choose a Google Drive folder in settings.", "auth");
+  }
+
+  const order = normalizePhotoOrder(query.order);
+  const slotMinutes = clampSlotMinutes(query.slotMinutes);
+  const slot = Math.floor(Date.now() / (slotMinutes * 60 * 1000));
+  const paperId = stringValue(query.paperId) || folderId;
+
+  const { accessToken } = await accessTokenFromKeyInput(query.serviceAccountKey);
+  const { files: listedFiles, rawCount } = await listFolderImagesWithAccessToken(
+    folderId,
+    accessToken,
+    folderResourceKey,
+  );
+  const files = sortFiles(listedFiles, order);
+  if (!files.length) {
+    throw new DriveSlideshowError(noImagesError(rawCount), noImagesErrorKind(rawCount));
+  }
+
+  const index = pickIndex(files.length, order, slot, paperId);
+  const file = files[index];
+
+  return {
+    source: "drive",
+    connectionMode: "serviceAccount",
+    accessToken,
+    fileId: file.id,
+    mimeType: file.mimeType,
+    thumbnailLink: file.thumbnailLink,
+    name: file.name,
+    index: index + 1,
+    total: files.length,
+    createdAt: file.createdTime,
+    modifiedAt: file.modifiedTime,
+    slot,
+    slotMinutes,
+  };
+}
+
+export default async function handler({ query }) {
+  try {
+    const mode = inferConnectionMode(query);
+    if (mode === "serviceAccount") {
+      return await handleServiceAccount(query);
+    }
+    return await handlePublic(query);
+  } catch (error) {
+    return errorPayload(error);
+  }
 }

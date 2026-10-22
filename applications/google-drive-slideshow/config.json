@@ -1,24 +1,32 @@
 {
   "name": "Google Drive Slideshow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "status": "alpha",
-  "description": "Shows one image at a time from a public Google Drive folder, advancing on a fixed time slot.",
+  "description": "Shows one image at a time from a Google Drive folder (public link or private folder via your service account), advancing on a fixed time slot.",
   "renderPage": "./render.html",
+  "settingsPage": "./settings.html",
   "icon": "./assets/icon.png",
   "nativeSettings": {
     "color": "light",
+    "connectionMode": "public",
     "folderUrl": "",
     "folderResourceKey": "",
     "apiKey": "",
+    "serviceAccountKey": "",
+    "serviceAccountEmail": "",
+    "folderId": "",
+    "folderName": "",
+    "folderResourceKeyPrivate": "",
     "order": "random",
     "fit": "cover",
     "slotMinutes": 60,
     "showFilename": false,
-    "brightnessBoost": "0 - Off"
+    "brightnessBoost": 0
   },
   "configVariants": [
     {
       "color": "light",
+      "connectionMode": "public",
       "folderUrl": "",
       "folderResourceKey": "",
       "apiKey": "",
@@ -26,10 +34,11 @@
       "fit": "cover",
       "slotMinutes": 60,
       "showFilename": false,
-      "brightnessBoost": "0 - Off"
+      "brightnessBoost": 0
     },
     {
       "color": "light",
+      "connectionMode": "public",
       "folderUrl": "",
       "folderResourceKey": "",
       "apiKey": "",
@@ -37,86 +46,106 @@
       "fit": "contain",
       "slotMinutes": 60,
       "showFilename": true,
-      "brightnessBoost": "0 - Off"
+      "brightnessBoost": 0
     }
   ],
   "formSchema": {
     "type": "object",
-    "required": [
-      "folderUrl",
-      "apiKey"
-    ],
     "properties": {
+      "connectionMode": {
+        "type": "string",
+        "title": "Active connection",
+        "enum": ["public", "serviceAccount"],
+        "default": "public",
+        "inStettingsPage": true
+      },
       "folderUrl": {
         "type": "string",
-        "title": "Folder URL or ID",
-        "description": "Public Google Drive folder link from Share (paste the full URL when possible), or the raw folder ID. Sharing must be Anyone with the link can view."
+        "title": "Public folder URL or ID",
+        "default": "",
+        "inStettingsPage": true
       },
       "folderResourceKey": {
         "type": "string",
-        "title": "Folder resource key",
-        "description": "Optional. Required for some link-shared folders when you use only a folder ID, or when the share URL has no resourcekey query parameter. Copy it from the full Share link (?resourcekey=…) or leave empty if the folder URL already includes it.",
-        "default": ""
+        "title": "Public folder resource key",
+        "default": "",
+        "inStettingsPage": true
       },
       "apiKey": {
         "type": "string",
         "title": "Google API key",
-        "description": "API key with the Google Drive API enabled. The key is sent only in POST requests to this integration's data adapter.",
-        "format": "password"
+        "format": "password",
+        "default": "",
+        "inStettingsPage": true
+      },
+      "serviceAccountKey": {
+        "type": "string",
+        "title": "Service account JSON key",
+        "format": "password",
+        "default": "",
+        "inStettingsPage": true
+      },
+      "serviceAccountEmail": {
+        "type": "string",
+        "title": "Service account email",
+        "default": "",
+        "inStettingsPage": true
+      },
+      "folderId": {
+        "type": "string",
+        "title": "Private folder ID",
+        "default": "",
+        "inStettingsPage": true
+      },
+      "folderName": {
+        "type": "string",
+        "title": "Private folder name",
+        "default": "",
+        "inStettingsPage": true
+      },
+      "folderResourceKeyPrivate": {
+        "type": "string",
+        "title": "Private folder resource key",
+        "default": "",
+        "inStettingsPage": true
       },
       "order": {
         "type": "string",
         "title": "Photo order",
-        "description": "Random picks a stable photo per time slot. Name, modified, and created rotate through the folder in that sort order.",
-        "enum": [
-          "name",
-          "modified",
-          "created",
-          "random"
-        ],
-        "default": "random"
+        "enum": ["name", "modified", "created", "random"],
+        "default": "random",
+        "inStettingsPage": true
       },
       "fit": {
         "type": "string",
         "title": "Image fit",
-        "enum": [
-          "cover",
-          "contain"
-        ],
-        "default": "cover"
+        "enum": ["cover", "contain"],
+        "default": "cover",
+        "inStettingsPage": true
       },
       "slotMinutes": {
         "type": "integer",
         "title": "Minutes per photo",
-        "description": "Match your frame's synchronisation interval so each refresh shows the image for that time slot.",
         "minimum": 1,
         "maximum": 1440,
-        "default": 60
+        "default": 60,
+        "inStettingsPage": true
       },
       "showFilename": {
         "type": "boolean",
         "title": "Show filename",
-        "default": false
+        "default": false,
+        "inStettingsPage": true
       },
       "brightnessBoost": {
-        "type": "string",
+        "type": "number",
         "title": "Brightness boost",
-        "description": "Exposure lift for the e-ink frame.",
-        "enum": [
-          "0 - Off",
-          "1",
-          "2",
-          "3 - Max"
-        ],
-        "default": "0 - Off"
+        "minimum": 0,
+        "maximum": 3,
+        "default": 0,
+        "inStettingsPage": true
       }
     }
   },
-  "language": [
-    "en",
-    "de",
-    "fr",
-    "es",
-    "it"
-  ]
+  "language": ["en", "de", "fr", "es", "it"]
 }

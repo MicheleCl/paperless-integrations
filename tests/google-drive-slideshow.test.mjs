@@ -1,17 +1,81 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import handler, {
   clampSlotMinutes,
+  inferConnectionMode,
   parseFolderInput,
   pickIndex,
   sortFiles,
   imageUrlsForFile,
 } from "../applications/google-drive-slideshow/api/data.js";
 import {
+  normalizeServiceAccountKeyInput,
+  parseServiceAccountKey,
+  sanitizeServiceAccountKeyText,
+  DriveSlideshowError,
+  driveErrorKind,
+  readGoogleError,
+} from "../applications/google-drive-slideshow/api/serviceAccount.js";
+import { inferConnectionMode as inferConnectionModeShared } from "../applications/google-drive-slideshow/assets/drive-connection.js";
+import foldersHandler from "../applications/google-drive-slideshow/api/folders.js";
+import {
   normalizeBrightnessBoost,
   brightnessBoostEpdMeta,
   defaultEpdOptimizeMeta,
 } from "../applications/google-drive-slideshow/assets/brightness-boost.js";
+
+test("inferConnectionMode honors explicit public when service account fields are present", () => {
+  assert.equal(
+    inferConnectionMode({
+      connectionMode: "public",
+      folderUrl: "https://drive.google.com/drive/folders/pub",
+      apiKey: "key",
+      serviceAccountKey: '{"client_email":"a@b.iam.gserviceaccount.com"}',
+      folderId: "private-folder",
+    }),
+    "public",
+  );
+});
+
+test("inferConnectionMode honors explicit serviceAccount when public fields are present", () => {
+  assert.equal(
+    inferConnectionMode({
+      connectionMode: "serviceAccount",
+      folderUrl: "https://drive.google.com/drive/folders/pub",
+      apiKey: "key",
+      serviceAccountKey: '{"client_email":"a@b.iam.gserviceaccount.com"}',
+      folderId: "private-folder",
+    }),
+    "serviceAccount",
+  );
+});
+
+test("inferConnectionMode falls back to credentials when connectionMode is missing", () => {
+  assert.equal(
+    inferConnectionMode({
+      serviceAccountKey: '{"client_email":"a@b.iam.gserviceaccount.com"}',
+      folderId: "private-folder",
+    }),
+    "serviceAccount",
+  );
+  assert.equal(
+    inferConnectionMode({
+      folderUrl: "https://drive.google.com/drive/folders/pub",
+      apiKey: "key",
+    }),
+    "public",
+  );
+});
+
+test("shared inferConnectionMode matches data re-export", () => {
+  const query = {
+    connectionMode: "serviceAccount",
+    serviceAccountKey: "x",
+    folderId: "abc",
+  };
+  assert.equal(inferConnectionMode(query), inferConnectionModeShared(query));
+});
 
 test("parseFolderInput accepts raw folder ID", () => {
   assert.deepEqual(parseFolderInput("1a2b3c-d4e5"), {
@@ -36,12 +100,19 @@ test("parseFolderInput parses open?id= URL", () => {
   );
 });
 
-test("parseFolderInput rejects invalid URLs", () => {
-  assert.throws(
-    () => parseFolderInput("https://example.com/no-folder-here"),
-    /folder ID/,
-  );
-  assert.throws(() => parseFolderInput("https://drive.google.com/"), /folder ID/);
+test("parseFolderInput rejects invalid URLs with transient errorKind", () => {
+  try {
+    parseFolderInput("https://example.com/no-folder-here");
+    assert.fail("expected throw");
+  } catch (error) {
+    assert.match(error.message, /folder ID/);
+    assert.equal(error.errorKind, "transient");
+  }
+  assert.throws(() => parseFolderInput("https://drive.google.com/"), (error) => {
+    assert.match(error.message, /folder ID/);
+    assert.equal(error.errorKind, "transient");
+    return true;
+  });
 });
 
 test("clampSlotMinutes clamps and defaults", () => {
@@ -87,18 +158,214 @@ test("handler returns sample when folder and key are empty", async () => {
   assert.ok(result.imageUrl.startsWith("data:image/svg+xml"));
 });
 
-test("handler requires folder URL when API key is set", async () => {
-  await assert.rejects(
-    () => handler({ query: { apiKey: "key-only" } }),
-    /folder URL or ID is required/,
+test("handler returns auth error when folder URL missing for public mode", async () => {
+  const result = await handler({ query: { apiKey: "key-only", connectionMode: "public" } });
+  assert.equal(result.errorKind, "auth");
+  assert.match(result.error, /folder URL or ID/i);
+});
+
+test("handler returns auth error when API key missing for public mode", async () => {
+  const result = await handler({
+    query: { folderUrl: "https://drive.google.com/drive/folders/abc", connectionMode: "public" },
+  });
+  assert.equal(result.errorKind, "auth");
+  assert.match(result.error, /API key/i);
+});
+
+test("handler returns auth error when service account key missing", async () => {
+  const result = await handler({
+    query: { connectionMode: "serviceAccount", folderId: "abc123" },
+  });
+  assert.equal(result.errorKind, "auth");
+  assert.match(result.error, /JSON key/i);
+});
+
+test("handler returns auth error when private folder not chosen", async () => {
+  const result = await handler({
+    query: {
+      connectionMode: "serviceAccount",
+      serviceAccountKey: '{"client_email":"a@b.iam.gserviceaccount.com","private_key":"x"}',
+    },
+  });
+  assert.equal(result.errorKind, "auth");
+  assert.match(result.error, /folder/i);
+});
+
+test("handler returns empty errorKind when folder has no images", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ files: [] }),
+  }));
+
+  const result = await handler({
+    query: {
+      connectionMode: "public",
+      folderUrl: "https://drive.google.com/drive/folders/abc123XYZ",
+      apiKey: "test-key",
+    },
+  });
+
+  assert.equal(result.errorKind, "empty");
+  assert.match(result.error, /empty/i);
+});
+
+test("handler returns unsupported when folder has only non-images", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const href = String(url);
+    if (href.includes("/files/abc123XYZ?")) {
+      return { ok: true, status: 200, json: async () => ({ resourceKey: "" }) };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        files: [{ id: "doc1", name: "notes.txt", mimeType: "text/plain" }],
+      }),
+    };
+  });
+
+  const result = await handler({
+    query: {
+      connectionMode: "public",
+      folderUrl: "https://drive.google.com/drive/folders/abc123XYZ",
+      apiKey: "test-key",
+    },
+  });
+
+  assert.equal(result.errorKind, "unsupported");
+  assert.match(result.error, /supported images/i);
+});
+
+test("driveErrorKind maps HTTP status", () => {
+  assert.equal(driveErrorKind(401), "auth");
+  assert.equal(driveErrorKind(403), "auth");
+  assert.equal(driveErrorKind(404), "auth");
+  assert.equal(driveErrorKind(500), "transient");
+  assert.equal(driveErrorKind(429), "transient");
+});
+
+test("readGoogleError parses API message", async () => {
+  const response = {
+    text: async () => JSON.stringify({ error: { message: "Quota exceeded" } }),
+  };
+  assert.equal(await readGoogleError(response, "fallback"), "Quota exceeded");
+});
+
+test("readGoogleError uses fallback for empty body", async () => {
+  const response = { text: async () => "" };
+  assert.equal(await readGoogleError(response, "fallback"), "fallback");
+});
+
+test("folders handler requires service account key", async () => {
+  const result = await foldersHandler({ query: {} });
+  assert.equal(result.errorKind, "auth");
+  assert.match(result.error, /JSON key/i);
+});
+
+test("folders handler returns sorted folders", async (t) => {
+  t.mock.method(crypto, "createSign", () => ({
+    update() {
+      return this;
+    },
+    sign() {
+      return Buffer.from("fakesignature");
+    },
+  }));
+
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const href = String(url);
+    if (href.includes("oauth2.googleapis.com/token")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ access_token: "tok" }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        files: [
+          { id: "b-id", name: "Beta", mimeType: "application/vnd.google-apps.folder" },
+          { id: "a-id", name: "Alpha", mimeType: "application/vnd.google-apps.folder" },
+        ],
+      }),
+    };
+  });
+
+  const saKey = JSON.stringify({
+    client_email: "robot@example.iam.gserviceaccount.com",
+    private_key: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n",
+  });
+
+  const result = await foldersHandler({ query: { serviceAccountKey: saKey } });
+  assert.ok(Array.isArray(result.folders));
+  assert.equal(result.folders.length, 2);
+  assert.deepEqual(result.folders.map((f) => f.name), ["Alpha", "Beta"]);
+});
+
+test("parseServiceAccountKey accepts parsed service account objects", () => {
+  const parsed = parseServiceAccountKey({
+    client_email: "robot@example.iam.gserviceaccount.com",
+    private_key: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n",
+  });
+  assert.equal(parsed.clientEmail, "robot@example.iam.gserviceaccount.com");
+});
+
+test("normalizeServiceAccountKeyInput stringifies object credentials", () => {
+  const object = {
+    client_email: "robot@example.iam.gserviceaccount.com",
+    private_key: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n",
+  };
+  assert.equal(
+    normalizeServiceAccountKeyInput(object),
+    JSON.stringify(object),
   );
 });
 
-test("handler requires API key when folder URL is set", async () => {
-  await assert.rejects(
-    () => handler({ query: { folderUrl: "https://drive.google.com/drive/folders/abc" } }),
-    /API key is required/,
+test("parseServiceAccountKey accepts JSON with non-breaking space indentation", () => {
+  const nbsp = "\u00a0";
+  const json = `{\n${nbsp}${nbsp}"client_email": "robot@example.iam.gserviceaccount.com",\n${nbsp}${nbsp}"private_key": "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n"\n}`;
+  const parsed = parseServiceAccountKey(json);
+  assert.equal(parsed.clientEmail, "robot@example.iam.gserviceaccount.com");
+});
+
+test("sanitizeServiceAccountKeyText normalizes nbsp and strips format chars", () => {
+  assert.equal(sanitizeServiceAccountKeyText("a\u00a0b"), "a b");
+  assert.equal(sanitizeServiceAccountKeyText("ok\u200bhere"), "okhere");
+});
+
+test("parseServiceAccountKey accepts double-encoded JSON strings", () => {
+  const object = {
+    client_email: "robot@example.iam.gserviceaccount.com",
+    private_key: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n",
+  };
+  const parsed = parseServiceAccountKey(JSON.stringify(JSON.stringify(object)));
+  assert.equal(parsed.clientEmail, "robot@example.iam.gserviceaccount.com");
+});
+
+test("parseServiceAccountKey rejects corrupted object string", () => {
+  assert.throws(() => parseServiceAccountKey("[object Object]"), /corrupted/i);
+});
+
+test("parseServiceAccountKey rejects invalid JSON", () => {
+  assert.throws(() => parseServiceAccountKey("not-json"), DriveSlideshowError);
+});
+
+test("parseServiceAccountKey requires client_email and private_key", () => {
+  assert.throws(() => parseServiceAccountKey("{}"), /client_email/);
+});
+
+test("parseServiceAccountKey accepts client_email and private_key", () => {
+  const parsed = parseServiceAccountKey(
+    JSON.stringify({
+      client_email: "robot@example.iam.gserviceaccount.com",
+      private_key: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n",
+    }),
   );
+  assert.equal(parsed.clientEmail, "robot@example.iam.gserviceaccount.com");
+  assert.ok(parsed.privateKey.includes("BEGIN PRIVATE KEY"));
 });
 
 test("normalizeBrightnessBoost parses enum labels and clamps", () => {
@@ -107,6 +374,7 @@ test("normalizeBrightnessBoost parses enum labels and clamps", () => {
   assert.equal(normalizeBrightnessBoost("bogus"), 0);
   assert.equal(normalizeBrightnessBoost("1"), 1);
   assert.equal(normalizeBrightnessBoost("3 - Max"), 3);
+  assert.equal(normalizeBrightnessBoost(2), 2);
   assert.equal(normalizeBrightnessBoost(99), 3);
   assert.equal(normalizeBrightnessBoost(-2), 0);
 });

@@ -3,26 +3,52 @@ const brightCanvasDitherOptions = {
   errorDiffusionMatrix: "floydSteinberg",
 };
 
-// Exposure steps checked on Spectra 6 output (natural intent, Floyd–Steinberg dither).
+// Tuned on Spectra 6 output (natural intent, Floyd–Steinberg dither).
+// brightnessBoost 0 = off; 1–3 are equal steps from off to the level-3 preset below.
+// Preview uses cssFilter; device render uses epdOptimize tone mapping + DRC.
 const brightnessBoostLevels = [
   null,
   {
-    cssFilter: "brightness(1.08) contrast(1.02)",
+    cssFilter: "brightness(1.05) contrast(1.01)",
     epdOptimize: {
       intent: "natural",
       imageAdjustmentOptions: {
         toneMapping: {
-          exposure: 0.15,
-          contrast: 0.02,
+          exposure: 0.1,
+          contrast: 0.01,
           saturation: 0,
-          strength: 0.16,
-          shadowBoost: 0.11,
-          highlightCompress: -0.05,
+          strength: 0.11,
+          shadowBoost: 0.08,
+          highlightCompress: -0.03,
           midpoint: 0.5,
         },
         dynamicRangeCompression: {
           mode: "display",
-          strength: 0.22,
+          strength: 0.15,
+          lowPercentile: 0.02,
+          highPercentile: 0.99,
+        },
+      },
+      canvasDitherOptions: brightCanvasDitherOptions,
+    },
+  },
+  {
+    cssFilter: "brightness(1.11) contrast(1.02)",
+    epdOptimize: {
+      intent: "natural",
+      imageAdjustmentOptions: {
+        toneMapping: {
+          exposure: 0.19,
+          contrast: 0.03,
+          saturation: 0,
+          strength: 0.21,
+          shadowBoost: 0.15,
+          highlightCompress: -0.06,
+          midpoint: 0.5,
+        },
+        dynamicRangeCompression: {
+          mode: "display",
+          strength: 0.29,
           lowPercentile: 0.02,
           highPercentile: 0.99,
         },
@@ -47,30 +73,6 @@ const brightnessBoostLevels = [
         dynamicRangeCompression: {
           mode: "display",
           strength: 0.44,
-          lowPercentile: 0.02,
-          highPercentile: 0.99,
-        },
-      },
-      canvasDitherOptions: brightCanvasDitherOptions,
-    },
-  },
-  {
-    cssFilter: "brightness(1.24) contrast(1.05)",
-    epdOptimize: {
-      intent: "natural",
-      imageAdjustmentOptions: {
-        toneMapping: {
-          exposure: 0.44,
-          contrast: 0.06,
-          saturation: 0,
-          strength: 0.48,
-          shadowBoost: 0.34,
-          highlightCompress: -0.14,
-          midpoint: 0.5,
-        },
-        dynamicRangeCompression: {
-          mode: "display",
-          strength: 0.66,
           lowPercentile: 0.02,
           highPercentile: 0.99,
         },
